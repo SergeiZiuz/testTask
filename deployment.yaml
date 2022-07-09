@@ -1,0 +1,70 @@
+# По условию у нас есть Мультизональный кластер из 5 нод в трёх зонах
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+spec:
+# Приложение разворачиваем на 4 подах для пиковой нагрузки
+  replicas: 4
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: ziuzevserg/myapp
+        # В рабочем режиме потребление 0.1 CPU
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          # На первые запросы плиложение может использовать больше ресурсов CPU
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 8080
+        env:
+          - name: CONTENT_API_URL
+            value: "http://content-api:8080"
+
+---
+# создаём автоматическое масштабирование до 4 подов во врема пиковой нагрузки
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: myapp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: myapp
+  # Во время минимальной нагрузни уменьшаем колличество подов до одного 
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp
+spec:
+  selector:
+    app: myapp
+  ports:
+  - port: 8080
+    targetPort: 8080
